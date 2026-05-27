@@ -158,6 +158,10 @@ def sync_event_to_user_calendar(refresh_token, title, start_time_str, location):
 def index():
     return "Calendar Assistant Bot is running!", 200
 
+@app.route("/google9d3e62493192a078.html")
+def google_verification():
+    return "google-site-verification: google9d3e62493192a078.html", 200
+
 @app.route("/login")
 def login():
     line_user_id = request.args.get("user_id")
