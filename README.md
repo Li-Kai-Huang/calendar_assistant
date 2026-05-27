@@ -141,3 +141,49 @@ ngrok http 5000
 📅 「我這週有什麼行程嗎？」來查詢您的行程表。  
   
 我會自動為您在行程開始前兩小時設定提醒，並為您把關時間衝突。請問有什麼我可以為您效勞的嗎？」
+
+---
+
+## ☁️ 雲端部署指南 (永久免費方案)
+
+如果您希望本專案能夠 24 小時永久運行，且不會因為關閉本機電腦而中斷服務，您可以將其部署至 **Render**，並使用 **Supabase** 作為免費的資料庫儲存。
+
+### Step 1. 建立免費 Supabase PostgreSQL 資料庫
+由於 Render 的免費磁碟是臨時的（伺服器重啟或休眠喚醒後 SQLite 會被還原），我們需要一個免費的線上資料庫：
+1. 註冊並登入 [Supabase](https://supabase.com/)。
+2. 建立一個新專案 (Project)，設定資料庫密碼。
+3. 建立完成後，在左側選單進入 **Project Settings** -> **Database**。
+4. 找到 **Connection string**，選擇 **URI** 格式。
+5. 複製這串以 `postgres://...` 開頭的連線網址（記住將其中的 `[YOUR-PASSWORD]` 替換為您當初設定的密碼），這就是您的 `DATABASE_URL`。
+
+### Step 2. 將專案推送到 GitHub
+1. 在 GitHub 上建立一個新的儲存庫。
+2. 開啟您的 GitHub Desktop，將 `calendar_assistant` 資料夾導入 (Add local repository) 並發布 (Publish) 到您的 GitHub 帳號。
+
+### Step 3. 在 Render 上建立 Web Service
+1. 註冊並登入 [Render](https://render.com/)。
+2. 點擊 **New +** -> **Web Service**。
+3. 連結您的 GitHub 帳號，並選擇剛才上傳的 `calendar_assistant` 儲存庫。
+4. 進行以下設定：
+   - **Runtime**: `Python`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `gunicorn app:app` (使用生產級伺服器)
+   - **Instance Type**: 選擇 `Free`
+
+### Step 4. 設定 Render 環境變數 (Environment Variables)
+在 Render Web Service 的設定頁面中，切換到 **Environment** 標籤，點擊 **Add Environment Variable**，並新增以下變數：
+- `LINE_CHANNEL_SECRET`: 您的 LINE Secret
+- `LINE_CHANNEL_ACCESS_TOKEN`: 您的 LINE Access Token
+- `GEMINI_API_KEY`: 您的 Gemini API Key
+- `DATABASE_URL`: 在 Step 1 複製的 Supabase 連線網址
+- `SMTP_SERVER`: `smtp.gmail.com`
+- `SMTP_PORT`: `465`
+- `SMTP_EMAIL`: 您的發信 Gmail
+- `SMTP_PASSWORD`: 您的 Gmail 應用程式密碼
+- `RECEIVER_EMAIL`: 您的收信信箱
+
+設定完成後，Render 會自動啟動部署。部署成功後，您會在 Render Console 左上方取得一個 HTTPS 網址（例如 `https://calendar-assistant-xxxx.onrender.com`）。
+
+### Step 5. 更新 LINE Webhook URL
+將 Render 提供給您的 HTTPS 網址加上 `/callback`（例如：`https://calendar-assistant-xxxx.onrender.com/callback`），填入 LINE Developers 後台的 **Webhook URL** 並儲存啟用。從此，您的 AI 行程管家便已完全永久在線！
+
