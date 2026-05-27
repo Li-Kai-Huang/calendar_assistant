@@ -91,6 +91,10 @@ def extract_intent_via_gemini(user_text):
             "error_msg": "AI 解析失敗，請提供更清晰的格式（例如：開會 2026-05-28 14:00 在海大）或聯絡管理員設定金鑰。"
         }
 
+@app.route("/")
+def index():
+    return "Calendar Assistant Bot is running!", 200
+
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature")

@@ -172,6 +172,7 @@ ngrok http 5000
 
 ### Step 4. 設定 Render 環境變數 (Environment Variables)
 在 Render Web Service 的設定頁面中，切換到 **Environment** 標籤，點擊 **Add Environment Variable**，並新增以下變數：
+- `TZ`: `Asia/Taipei` (台北時區，非常重要！確保排程器發信與 Gemini 相對時間解析皆使用台灣時間)
 - `LINE_CHANNEL_SECRET`: 您的 LINE Secret
 - `LINE_CHANNEL_ACCESS_TOKEN`: 您的 LINE Access Token
 - `GEMINI_API_KEY`: 您的 Gemini API Key
@@ -185,5 +186,15 @@ ngrok http 5000
 設定完成後，Render 會自動啟動部署。部署成功後，您會在 Render Console 左上方取得一個 HTTPS 網址（例如 `https://calendar-assistant-xxxx.onrender.com`）。
 
 ### Step 5. 更新 LINE Webhook URL
-將 Render 提供給您的 HTTPS 網址加上 `/callback`（例如：`https://calendar-assistant-xxxx.onrender.com/callback`），填入 LINE Developers 後台的 **Webhook URL** 並儲存啟用。從此，您的 AI 行程管家便已完全永久在線！
+將 Render 提供給您的 HTTPS 網址加上 `/callback`（例如：`https://calendar-assistant-xxxx.onrender.com/callback`），填入 LINE Developers 後台的 **Webhook URL** 並儲存啟用。點選 **Verify** 測試，成功後開啟 **Use webhook** 功能。
+
+### Step 6. (重要) 使用 UptimeRobot 維持服務活躍，防止排程失效
+由於 Render 的 Free 方案在 15 分鐘無流量時會自動進入休眠 (Spin Down)，休眠期間背景發信排程器會停止運作。若要維持 24 小時準時的 Email 提醒：
+1. 註冊並登入免費的 [UptimeRobot](https://uptimerobot.com/)。
+2. 點擊 **Add New Monitor**。
+3. **Monitor Type** 選擇 `HTTP(s)`。
+4. **Friendly Name** 可以填入 `Calendar Assistant`。
+5. **URL (or IP)** 填入您的 Render 網址 (例如：`https://calendar-assistant-xxxx.onrender.com/`)。
+6. **Monitoring Interval** 設定為每 `5 minutes` (5 分鐘) 一次。
+7. 點擊 **Create Monitor**。這會讓 UptimeRobot 每 5 分鐘請求一次網頁，使 Render 服務保持喚醒狀態，發信提醒功能即可 24 小時正常運作！
 
