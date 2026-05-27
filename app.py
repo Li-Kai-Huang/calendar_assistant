@@ -157,6 +157,20 @@ def handle_message(event):
         # 3. 寫入資料庫并確認
         success, record = database.add_task(title, start_time_str, reminder_time_str, location)
         if success:
+            # 4. 同步到 Google 日曆 (透過 GAS)
+            GAS_CALENDAR_URL = os.environ.get("GAS_CALENDAR_URL")
+            if GAS_CALENDAR_URL:
+                try:
+                    import requests
+                    requests.post(GAS_CALENDAR_URL, json={
+                        "title": title,
+                        "start_time": start_time_str,
+                        "location": location
+                    }, timeout=10)
+                    print("Google Calendar sync success.")
+                except Exception as ex:
+                    print(f"Failed to sync to Google Calendar: {ex}")
+
             # record: (id, title, start_time, reminder_time, location)
             reply_text = (
                 f"📋 已新增行程：{record[1]}\n"
