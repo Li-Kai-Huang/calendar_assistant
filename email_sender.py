@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def send_reminder_email(title, start_time):
+def send_reminder_email(title, start_time, location):
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     try:
         smtp_port = int(os.environ.get("SMTP_PORT", "465"))
@@ -28,6 +28,7 @@ def send_reminder_email(title, start_time):
 提醒您，您有一個登記的行程即將在兩小時後開始！
 
 📌 行程名稱：{title}
+📍 行程地點：{location}
 ⏰ 開始時間：{start_time}
 
 請您提前做好相關準備。
@@ -53,7 +54,7 @@ def send_reminder_email(title, start_time):
         server.login(sender_email, sender_password)
         server.sendmail(sender_email, [receiver_email], msg.as_string())
         server.quit()
-        print(f"Email sent successfully to {receiver_email} for task: '{title}'")
+        print(f"Email sent successfully to {receiver_email} for task: '{title}' at '{location}'")
         return True
     except Exception as e:
         print(f"Failed to send email: {e}")
@@ -64,7 +65,8 @@ if __name__ == "__main__":
     print("正在測試發信功能...")
     test_title = "測試行程 (開會)"
     test_time = "2026-05-27 16:00:00"
-    success = send_reminder_email(test_title, test_time)
+    test_loc = "海洋大學資工系館"
+    success = send_reminder_email(test_title, test_time, test_loc)
     if success:
         print("測試信發送成功！")
     else:

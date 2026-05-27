@@ -14,7 +14,6 @@ def get_connection():
     if IS_POSTGRES:
         import psycopg2
         db_url = DATABASE_URL
-        # Render/Supabase 通常提供 postgres:// 形式網址，psycopg2 需要相容
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
         return psycopg2.connect(db_url)
@@ -26,59 +25,78 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     if IS_POSTGRES:
-        # PostgreSQL 資料表建立語法
+        # PostgreSQL
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id SERIAL PRIMARY KEY,
                 title VARCHAR(255) NOT NULL,
                 start_time TIMESTAMP NOT NULL,
                 reminder_time TIMESTAMP NOT NULL,
+                location VARCHAR(255),
                 status VARCHAR(50) DEFAULT 'pending'
             )
         """)
+        # 自動遷移升級 (若是從舊版升級)
+        try:
+            cursor.execute("ALTER TABLE tasks ADD COLUMN location VARCHAR(255)")
+            conn.commit()
+            print("Successfully added location column to PostgreSQL.")
+        except:
+            # 欄位已存在
+            pass
     else:
-        # SQLite 資料表建立語法
+        # SQLite
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 start_time TEXT NOT NULL,
                 reminder_time TEXT NOT NULL,
+                location TEXT,
                 status TEXT DEFAULT 'pending'
             )
         """)
+        # 自動遷移升級 (若是從舊版升級)
+        try:
+            cursor.execute("ALTER TABLE tasks ADD COLUMN location TEXT")
+            conn.commit()
+            print("Successfully added location column to SQLite.")
+        except:
+            # 欄位已存在
+            pass
+            
     conn.commit()
     conn.close()
     print("Database initialized successfully.")
 
-def add_task(title, start_time, reminder_time):
+def add_task(title, start_time, reminder_time, location):
     try:
         conn = get_connection()
         cursor = conn.cursor()
         if IS_POSTGRES:
             cursor.execute("""
-                INSERT INTO tasks (title, start_time, reminder_time, status)
-                VALUES (%s, %s, %s, 'pending')
-                RETURNING id, title, start_time, reminder_time
-            """, (title, start_time, reminder_time))
+                INSERT INTO tasks (title, start_time, reminder_time, location, status)
+                VALUES (%s, %s, %s, %s, 'pending')
+                RETURNING id, title, start_time, reminder_time, location
+            """, (title, start_time, reminder_time, location))
             record = cursor.fetchone()
             conn.commit()
             if record:
-                # 轉成字串以保持與原本代碼相容
                 record = (
                     record[0],
                     record[1],
                     record[2].strftime("%Y-%m-%d %H:%M:%S"),
-                    record[3].strftime("%Y-%m-%d %H:%M:%S")
+                    record[3].strftime("%Y-%m-%d %H:%M:%S"),
+                    record[4]
                 )
         else:
             cursor.execute("""
-                INSERT INTO tasks (title, start_time, reminder_time, status)
-                VALUES (?, ?, ?, 'pending')
-            """, (title, start_time, reminder_time))
+                INSERT INTO tasks (title, start_time, reminder_time, location, status)
+                VALUES (?, ?, ?, ?, 'pending')
+            """, (title, start_time, reminder_time, location))
             conn.commit()
             last_id = cursor.lastrowid
-            cursor.execute("SELECT id, title, start_time, reminder_time FROM tasks WHERE id = ?", (last_id,))
+            cursor.execute("SELECT id, title, start_time, reminder_time, location FROM tasks WHERE id = ?", (last_id,))
             record = cursor.fetchone()
         
         conn.close()
@@ -96,7 +114,6 @@ def check_conflict(start_time_str):
     conn = get_connection()
     cursor = conn.cursor()
     if IS_POSTGRES:
-        # PostgreSQL 時間差計算
         cursor.execute("""
             SELECT title, start_time FROM tasks
             WHERE abs(extract(epoch from start_time) - extract(epoch from %s::timestamp)) < 3600
@@ -104,7 +121,6 @@ def check_conflict(start_time_str):
         rows = cursor.fetchall()
         conflicts = [(r[0], r[1].strftime("%Y-%m-%d %H:%M:%S")) for r in rows]
     else:
-        # SQLite 時間差計算
         cursor.execute("""
             SELECT title, start_time FROM tasks
             WHERE abs(strftime('%s', start_time) - strftime('%s', ?)) < 3600
@@ -118,7 +134,7 @@ def get_all_tasks():
     conn = get_connection()
     cursor = conn.cursor()
     if IS_POSTGRES:
-        cursor.execute("SELECT id, title, start_time, reminder_time, status FROM tasks ORDER BY start_time ASC")
+        cursor.execute("SELECT id, title, start_time, reminder_time, location, status FROM tasks ORDER BY start_time ASC")
         rows = cursor.fetchall()
         tasks = []
         for r in rows:
@@ -127,10 +143,11 @@ def get_all_tasks():
                 r[1],
                 r[2].strftime("%Y-%m-%d %H:%M:%S"),
                 r[3].strftime("%Y-%m-%d %H:%M:%S"),
-                r[4]
+                r[4],
+                r[5]
             ))
     else:
-        cursor.execute("SELECT id, title, start_time, reminder_time, status FROM tasks ORDER BY start_time ASC")
+        cursor.execute("SELECT id, title, start_time, reminder_time, location, status FROM tasks ORDER BY start_time ASC")
         tasks = cursor.fetchall()
     conn.close()
     return tasks
@@ -140,7 +157,7 @@ def get_pending_reminders(current_time_str):
     cursor = conn.cursor()
     if IS_POSTGRES:
         cursor.execute("""
-            SELECT id, title, start_time, reminder_time, status FROM tasks 
+            SELECT id, title, start_time, reminder_time, location, status FROM tasks 
             WHERE reminder_time <= %s::timestamp AND status = 'pending'
         """, (current_time_str,))
         rows = cursor.fetchall()
@@ -151,11 +168,12 @@ def get_pending_reminders(current_time_str):
                 r[1],
                 r[2].strftime("%Y-%m-%d %H:%M:%S"),
                 r[3].strftime("%Y-%m-%d %H:%M:%S"),
-                r[4]
+                r[4],
+                r[5]
             ))
     else:
         cursor.execute("""
-            SELECT id, title, start_time, reminder_time, status FROM tasks 
+            SELECT id, title, start_time, reminder_time, location, status FROM tasks 
             WHERE reminder_time <= ? AND status = 'pending'
         """, (current_time_str,))
         tasks = cursor.fetchall()
