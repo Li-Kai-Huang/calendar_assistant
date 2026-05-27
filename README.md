@@ -1,0 +1,125 @@
+# AI 行程管家 LINE Bot (Calendar Assistant)
+
+本專案是一個基於 Python Flask 框架與 LINE Messaging API 的「AI 行程管家」。它結合了 **Google Gemini API** 的自然語言處理能力，能直接讀懂主人的指令（例如「明天下午兩點去開會」），自動將模糊時間轉換為精確的格式、偵測行程時間衝突，並在行程**開始前兩小時**自動計算並設定提醒時間，最後安全儲存於本地的 **SQLite** 資料庫中。
+
+---
+
+## 📂 專案結構說明
+
+* 📄 `app.py`: Flask 主伺服器，處理 LINE Webhook 請求、控制 Gemini AI 意圖解析與排程衝突邏輯。
+* 📄 `database.py`: 本地 SQLite 資料庫封裝模組，負責初始化 `tasks` 資料表及所有資料庫 CRUD 操作。
+* 📄 `requirements.txt`: 專案所需的 Python 依賴套件。
+* 📄 `.gitignore`: Git 排除清單，防止本地資料庫檔案 `calendar_data.db`、金鑰設定 `.env` 與虛擬環境被上傳至 GitHub。
+* 📄 `.env` 與 `.env.example`: 本地執行設定檔（存放金鑰憑證）。
+
+---
+
+## 🛠️ 開發環境準備
+
+### 1. 建立並啟用 Python 虛擬環境 (`venv`)
+請在專案根目錄下執行以下指令：
+```bash
+# 建立虛擬環境
+python -m venv venv
+
+# 啟用虛擬環境 (Windows PowerShell)
+.\venv\Scripts\Activate.ps1
+```
+
+### 2. 安裝相依套件
+在啟用的虛擬環境中執行以下指令進行安裝：
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## 🔑 金鑰設定說明 (`.env`)
+
+請複製 `.env.example` 並重新命名為 `.env`，接著填入以下資訊：
+
+```ini
+# LINE Bot 憑證 (請在 LINE Developers 取得)
+LINE_CHANNEL_SECRET=您的_LINE_Channel_Secret
+LINE_CHANNEL_ACCESS_TOKEN=您的_LINE_Channel_Access_Token
+
+# Gemini API 金鑰 (用於智慧解析行程)
+GEMINI_API_KEY=您的_Gemini_API_Key
+```
+
+> 💡 **如何取得 Gemini API Key？**
+> 1. 前往 [Google AI Studio](https://aistudio.google.com/)。
+> 2. 登入您的 Google 帳號。
+> 3. 點擊 **Get API key**，並建立一個新的 API Key。它具備免費額度，足以應付開發與測試需求！
+
+---
+
+## 🚀 專案啟動與串接
+
+### Step 1. 啟動 Flask 伺服器
+在啟用虛擬環境的狀態下，於專案根目錄執行：
+```bash
+python app.py
+```
+伺服器將在本地 `http://127.0.0.1:5000` 啟動，並自動在目錄下初始化 `calendar_data.db`。
+
+### Step 2. 使用 Ngrok 建立公開通道
+開啟另一個命令提示字元視窗，執行以下指令將本地 5000 Port 對外開放：
+```bash
+ngrok http 5000
+```
+複製產生的 HTTPS 網址（例如 `https://xxxx-xxx-xxx.ngrok-free.app`）。
+
+### Step 3. 設定 LINE Webhook
+1. 登入 [LINE Developers Console](https://developers.line.biz/)。
+2. 選擇您的 Channel，切換至 **Messaging API** 頁籤。
+3. 在 **Webhook URL** 欄位貼上剛才複製的 HTTPS 網址，並在尾端加上 `/callback`（例如：`https://xxxx-xxx-xxx.ngrok-free.app/callback`）。
+4. 點選 **Update**，並點擊 **Verify**，若顯示 **Success** 即表示連線成功！
+5. **重要**：請將頁面底下的 **Use webhook** 功能開啟。
+6. **建議**：請在同一頁面下方的「LINE Official Account features」中，將 **Auto-reply messages** (自動回覆訊息) 設定為 **Disabled** (停用)，否則 LINE 官方會搶先發送罐頭回覆。
+
+---
+
+## 🤖 互動指令與管家語氣示範
+
+### 1. 新增行程 (模糊時間自動轉換)
+您可以用最自然的說法向管家提出要求，系統會自動在**行程開始前兩小時**設定提醒：
+* **使用者**：「幫我記下明天下午三點去開會」
+* **AI 管家**：「📋 已新增行程：去開會  
+⏰ 時間：2026-05-28 15:00:00  
+🔔 提醒設定為：2026-05-28 13:00:00 (行程前兩小時)  
+  
+主人，我已確認該行程與提醒成功寫入資料庫，已為您安排妥當。」
+
+### 2. 資訊遺漏提示
+若輸入的指令不完整（例如沒有提到日期或時間）：
+* **使用者**：「我要去看牙醫」
+* **AI 管家**：「主人，您想新增行程，但似乎缺少日期與時間。可以請您提供完整的行程名稱、日期與時間嗎？」
+
+### 3. 時間衝突警告
+若您預約的時段與現有行程（**前後 1 小時內**）重疊：
+* **使用者**：「明天下午三點半要去運動」
+* **AI 管家**：「⚠️ 主人，偵測到行程時間衝突！  
+在該時段附近已有以下行程：  
+• 去開會 (2026-05-28 15:00:00)  
+  
+請確認是否需要調整新行程的安排？」
+
+### 4. 查詢行程
+* **使用者**：「我有哪些行程？」
+* **AI 管家**：「📋 主人，您目前已登記的行程清單如下：  
+  
+📌 去開會  
+   時間: 2026-05-28 15:00:00  
+   提醒: 2026-05-28 13:00:00」
+
+### 5. 閒聊與說明
+若說了其他無關行程的話：
+* **使用者**：「哈囉！」
+* **AI 管家**：「您好，我是您的 AI 行程管家。🎩  
+  
+您可以對我說：  
+✍️ 「幫我記下明天下午三點去開會」來新增行程。  
+📅 「我這週有什麼行程嗎？」來查詢您的行程表。  
+  
+我會自動為您在行程開始前兩小時設定提醒，並為您把關時間衝突。請問有什麼我可以為您效勞的嗎？」
