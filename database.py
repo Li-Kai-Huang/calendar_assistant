@@ -36,6 +36,14 @@ def init_db():
                 status VARCHAR(50) DEFAULT 'pending'
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_tokens (
+                line_user_id VARCHAR(255) PRIMARY KEY,
+                google_email VARCHAR(255),
+                refresh_token TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         # 自動遷移升級 (若是從舊版升級)
         try:
             cursor.execute("ALTER TABLE tasks ADD COLUMN location VARCHAR(255)")
@@ -54,6 +62,14 @@ def init_db():
                 reminder_time TEXT NOT NULL,
                 location TEXT,
                 status TEXT DEFAULT 'pending'
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_tokens (
+                line_user_id TEXT PRIMARY KEY,
+                google_email TEXT,
+                refresh_token TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
         # 自動遷移升級 (若是從舊版升級)
@@ -193,6 +209,67 @@ def update_task_status(task_id, status):
         return True
     except Exception as e:
         print(f"Error updating task status: {e}")
+        return False
+
+def save_user_token(line_user_id, google_email, refresh_token):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        if IS_POSTGRES:
+            cursor.execute("""
+                INSERT INTO user_tokens (line_user_id, google_email, refresh_token)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (line_user_id) DO UPDATE
+                SET google_email = EXCLUDED.google_email,
+                    refresh_token = EXCLUDED.refresh_token,
+                    created_at = CURRENT_TIMESTAMP
+            """, (line_user_id, google_email, refresh_token))
+        else:
+            cursor.execute("""
+                INSERT INTO user_tokens (line_user_id, google_email, refresh_token)
+                VALUES (?, ?, ?)
+                ON CONFLICT (line_user_id) DO UPDATE SET
+                    google_email = excluded.google_email,
+                    refresh_token = excluded.refresh_token,
+                    created_at = CURRENT_TIMESTAMP
+            """, (line_user_id, google_email, refresh_token))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error saving user token: {e}")
+        return False
+
+def get_user_token(line_user_id):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        if IS_POSTGRES:
+            cursor.execute("SELECT google_email, refresh_token FROM user_tokens WHERE line_user_id = %s", (line_user_id,))
+        else:
+            cursor.execute("SELECT google_email, refresh_token FROM user_tokens WHERE line_user_id = ?", (line_user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return {"email": row[0], "refresh_token": row[1]}
+        return None
+    except Exception as e:
+        print(f"Error getting user token: {e}")
+        return None
+
+def delete_user_token(line_user_id):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        if IS_POSTGRES:
+            cursor.execute("DELETE FROM user_tokens WHERE line_user_id = %s", (line_user_id,))
+        else:
+            cursor.execute("DELETE FROM user_tokens WHERE line_user_id = ?", (line_user_id,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error deleting user token: {e}")
         return False
 
 if __name__ == "__main__":

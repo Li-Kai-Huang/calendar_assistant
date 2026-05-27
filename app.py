@@ -1,12 +1,16 @@
 import os
 import datetime
 import json
-from flask import Flask, request, abort
+from flask import Flask, request, abort, redirect
+import flask
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from dotenv import load_dotenv
 import google.generativeai as genai
+import google.oauth2.credentials
+import google_auth_oauthlib.flow
+from googleapiclient.discovery import build
 
 import database
 
@@ -91,9 +95,176 @@ def extract_intent_via_gemini(user_text):
             "error_msg": "AI 解析失敗，請提供更清晰的格式（例如：開會 2026-05-28 14:00 在海大）或聯絡管理員設定金鑰。"
         }
 
+# Google OAuth2 設定
+SCOPES = ['https://www.googleapis.com/auth/calendar.events']
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+OAUTH_REDIRECT_BASE = os.environ.get("OAUTH_REDIRECT_BASE")
+
+def get_calendar_service(refresh_token):
+    """
+    透過 refresh_token 建立 Google Calendar API 服務連線
+    """
+    creds = google.oauth2.credentials.Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET
+    )
+    return build('calendar', 'v3', credentials=creds)
+
+def sync_event_to_user_calendar(refresh_token, title, start_time_str, location):
+    """
+    直接呼叫 Google Calendar API 新增行程
+    """
+    try:
+        service = get_calendar_service(refresh_token)
+        
+        start_dt = datetime.datetime.strptime(start_time_str, "%Y-%m-%d %H:%M:%S")
+        end_dt = start_dt + datetime.timedelta(hours=1)
+        
+        start_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        end_iso = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        
+        event = {
+            'summary': title,
+            'location': location,
+            'start': {
+                'dateTime': start_iso,
+                'timeZone': 'Asia/Taipei',
+            },
+            'end': {
+                'dateTime': end_iso,
+                'timeZone': 'Asia/Taipei',
+            },
+            'reminders': {
+                'useDefault': False,
+                'overrides': [
+                    {'method': 'email', 'minutes': 120},
+                    {'method': 'popup', 'minutes': 30},
+                ],
+            }
+        }
+        
+        event_result = service.events().insert(calendarId='primary', body=event).execute()
+        print(f"Google Calendar sync success! Event ID: {event_result.get('id')}")
+        return True, event_result.get('id')
+    except Exception as e:
+        print(f"Failed to sync to Google Calendar: {e}")
+        return False, str(e)
+
 @app.route("/")
 def index():
     return "Calendar Assistant Bot is running!", 200
+
+@app.route("/login")
+def login():
+    line_user_id = request.args.get("user_id")
+    if not line_user_id:
+        return "Error: Missing user_id parameter.", 400
+        
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        return "Error: Google Client credentials are not configured on the server.", 500
+        
+    redirect_base = OAUTH_REDIRECT_BASE or request.host_url.rstrip('/')
+    if redirect_base.startswith("http://") and not ("127.0.0.1" in redirect_base or "localhost" in redirect_base):
+        redirect_base = redirect_base.replace("http://", "https://", 1)
+    redirect_uri = f"{redirect_base}/oauth2callback"
+    
+    flow = google_auth_oauthlib.flow.Flow.from_client_config(
+        {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "project_id": "calendar-assistant",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uris": [redirect_uri]
+            }
+        },
+        scopes=SCOPES
+    )
+    flow.redirect_uri = redirect_uri
+    
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent',
+        state=line_user_id
+    )
+    return redirect(authorization_url)
+
+@app.route("/oauth2callback")
+def oauth2callback():
+    line_user_id = request.args.get("state")
+    code = request.args.get("code")
+    
+    if not line_user_id or not code:
+        return "Error: Missing parameter.", 400
+        
+    redirect_base = OAUTH_REDIRECT_BASE or request.host_url.rstrip('/')
+    if redirect_base.startswith("http://") and not ("127.0.0.1" in redirect_base or "localhost" in redirect_base):
+        redirect_base = redirect_base.replace("http://", "https://", 1)
+    redirect_uri = f"{redirect_base}/oauth2callback"
+    
+    try:
+        flow = google_auth_oauthlib.flow.Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "project_id": "calendar-assistant",
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "redirect_uris": [redirect_uri]
+                }
+            },
+            scopes=SCOPES
+        )
+        flow.redirect_uri = redirect_uri
+        
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
+        refresh_token = credentials.refresh_token
+        
+        service = build('calendar', 'v3', credentials=credentials)
+        calendar_list_entry = service.calendars().get(calendarId='primary').execute()
+        google_email = calendar_list_entry.get('id')
+        
+        if refresh_token:
+            database.save_user_token(line_user_id, google_email, refresh_token)
+        else:
+            existing = database.get_user_token(line_user_id)
+            if existing:
+                refresh_token = existing["refresh_token"]
+                database.save_user_token(line_user_id, google_email, refresh_token)
+            else:
+                return """
+                <html>
+                <body style="font-family: Arial, sans-serif; text-align: center; padding-top: 50px;">
+                    <h2 style="color: #e74c3c;">授權失敗</h2>
+                    <p>未能取得 Google 的 Refresh Token，請至您 Google 帳戶的「安全性設定」中移除對此應用的權限，再重新嘗試綁定一次。</p>
+                </body>
+                </html>
+                """, 400
+                
+        return f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding-top: 50px; background-color: #f8f9fa;">
+            <div style="display: inline-block; padding: 30px; border-radius: 10px; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <h2 style="color: #2ecc71; margin-bottom: 10px;">🎉 綁定成功！</h2>
+                <p style="color: #7f8c8d; margin-bottom: 20px;">您的 LINE 帳號已成功與 Google 日曆 <strong>{google_email}</strong> 完成連接。</p>
+                <p style="color: #34495e;">現在您可以回到 LINE 開始使用 AI 行程管家了。🎩</p>
+            </div>
+        </body>
+        </html>
+        """
+    except Exception as e:
+        print(f"OAuth Callback Error: {e}")
+        return f"Authentication Failed: {e}", 500
 
 @app.route("/callback", methods=["POST"])
 def callback():
@@ -140,6 +311,26 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
             return
             
+        # 0. 檢查使用者是否已綁定 Google 帳戶
+        line_user_id = event.source.user_id
+        user_token = None
+        if line_user_id:
+            user_token = database.get_user_token(line_user_id)
+            
+        if not user_token:
+            redirect_base = OAUTH_REDIRECT_BASE or request.host_url.rstrip('/')
+            if redirect_base.startswith("http://") and not ("127.0.0.1" in redirect_base or "localhost" in redirect_base):
+                redirect_base = redirect_base.replace("http://", "https://", 1)
+            login_url = f"{redirect_base}/login?user_id={line_user_id}"
+            
+            reply_text = (
+                "主人，在為您新增行程之前，請先點擊以下連結，授權我將行程同步到您的 Google 日曆中：\n\n"
+                f"🔗 連結您的 Google 帳號：\n{login_url}\n\n"
+                "授權完成後，您就可以對我說「明天下午三點開會」來自動同步您的行程了！"
+            )
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
+            return
+            
         # 1. 檢查衝突 (前後 1 小時)
         conflicts = database.check_conflict(start_time_str)
         if conflicts:
@@ -161,23 +352,16 @@ def handle_message(event):
         # 3. 寫入資料庫并確認
         success, record = database.add_task(title, start_time_str, reminder_time_str, location)
         if success:
-            # 4. 同步到 Google 日曆 (透過 GAS)
-            GAS_CALENDAR_URL = os.environ.get("GAS_CALENDAR_URL")
-            if GAS_CALENDAR_URL:
-                try:
-                    import requests
-                    requests.post(GAS_CALENDAR_URL, json={
-                        "title": title,
-                        "start_time": start_time_str,
-                        "location": location
-                    }, timeout=10)
-                    print("Google Calendar sync success.")
-                except Exception as ex:
-                    print(f"Failed to sync to Google Calendar: {ex}")
+            # 4. 同步至該用戶的 Google 日曆
+            refresh_token = user_token["refresh_token"]
+            google_email = user_token["email"]
+            sync_success, sync_id = sync_event_to_user_calendar(refresh_token, title, start_time_str, location)
+            
+            sync_msg = f" (已同步至您的 Google 日曆：{google_email})" if sync_success else " (Google 日曆同步失敗，但已儲存至系統資料庫)"
 
             # record: (id, title, start_time, reminder_time, location)
             reply_text = (
-                f"📋 已新增行程：{record[1]}\n"
+                f"📋 已新增行程：{record[1]}{sync_msg}\n"
                 f"📍 地點：{record[4]}\n"
                 f"⏰ 時間：{record[2]}\n"
                 f"🔔 提醒設定為：{record[3]} (行程前兩小時)\n\n"

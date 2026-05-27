@@ -160,35 +160,41 @@ ngrok http 5000
 1. 在 GitHub 上建立一個新的儲存庫。
 2. 開啟您的 GitHub Desktop，將 `calendar_assistant` 資料夾導入 (Add local repository) 並發布 (Publish) 到您的 GitHub 帳號。
 
-### Step 3. 在 Render 上建立 Web Service
+### Step 4. 在 Render 上建立 Web Service
 1. 註冊並登入 [Render](https://render.com/)。
-2. 點擊 **New +** -> **Web Service**。
-3. 連結您的 GitHub 帳號，並選擇剛才上傳的 `calendar_assistant` 儲存庫。
-4. 進行以下設定：
+2. 點擊 **New +** -> **Web Service**，選擇您剛才上傳的 `calendar_assistant` 儲存庫。
+3. 進行以下設定：
    - **Runtime**: `Python`
    - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `gunicorn app:app` (使用生產級伺服器)
+   - **Start Command**: `gunicorn app:app`
    - **Instance Type**: 選擇 `Free`
 
-### Step 4. 設定 Render 環境變數 (Environment Variables)
+---
+
+### Step 5. 設定 Render 環境變數 (Environment Variables)
 在 Render Web Service 的設定頁面中，切換到 **Environment** 標籤，點擊 **Add Environment Variable**，並新增以下變數：
-- `TZ`: `Asia/Taipei` (台北時區，非常重要！確保排程器發信與 Gemini 相對時間解析皆使用台灣時間)
+- `TZ`: `Asia/Taipei` *(確保排程器與 Gemini 均使用台北時間)*
+- `DATABASE_URL`: 您在 Step 1 取得的 Supabase PostgreSQL 連線網址
 - `LINE_CHANNEL_SECRET`: 您的 LINE Secret
 - `LINE_CHANNEL_ACCESS_TOKEN`: 您的 LINE Access Token
 - `GEMINI_API_KEY`: 您的 Gemini API Key
-- `DATABASE_URL`: 在 Step 1 複製的 Supabase 連線網址
+- `GOOGLE_CLIENT_ID`: 您在 Step 2 取得的 Google Client ID
+- `GOOGLE_CLIENT_SECRET`: 您在 Step 2 取得的 Google Client Secret
+- `OAUTH_REDIRECT_BASE`: 您的 Render 網址 (如 `https://calendar-assistant-xxxx.onrender.com`，最後面不要帶斜線)
 - `SMTP_SERVER`: `smtp.gmail.com`
 - `SMTP_PORT`: `465`
-- `SMTP_EMAIL`: 您的發信 Gmail
+- `SMTP_EMAIL`: 您的發信 Gmail (`0126c024@email.ntou.edu.tw`)
 - `SMTP_PASSWORD`: 您的 Gmail 應用程式密碼
 - `RECEIVER_EMAIL`: 您的收信信箱
 
-設定完成後，Render 會自動啟動部署。部署成功後，您會在 Render Console 左上方取得一個 HTTPS 網址（例如 `https://calendar-assistant-xxxx.onrender.com`）。
+設定完成後，Render 會自動啟動部署。部署成功後，您會在 Render Console 左上方取得您的 HTTPS 網址。
 
-### Step 5. 更新 LINE Webhook URL
-將 Render 提供給您的 HTTPS 網址加上 `/callback`（例如：`https://calendar-assistant-xxxx.onrender.com/callback`），填入 LINE Developers 後台的 **Webhook URL** 並儲存啟用。點選 **Verify** 測試，成功後開啟 **Use webhook** 功能。
+### Step 6. 更新 LINE Webhook URL
+將您的 Render HTTPS 網址加上 `/callback`（例如：`https://calendar-assistant-xxxx.onrender.com/callback`），填入 LINE Developers 後台的 **Webhook URL** 並儲存啟用。點選 **Verify** 測試，成功後開啟 **Use webhook** 功能。
 
-### Step 6. (重要) 使用 UptimeRobot 維持服務活躍，防止排程失效
+---
+
+### Step 7. (重要) 使用 UptimeRobot 維持服務活躍，防止排程失效
 由於 Render 的 Free 方案在 15 分鐘無流量時會自動進入休眠 (Spin Down)，休眠期間背景發信排程器會停止運作。若要維持 24 小時準時的 Email 提醒：
 1. 註冊並登入免費的 [UptimeRobot](https://uptimerobot.com/)。
 2. 點擊 **Add New Monitor**。
