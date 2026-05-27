@@ -189,5 +189,37 @@ def handle_message(event):
         )
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
 
+def start_reminder_scheduler():
+    import threading
+    import time
+    import email_sender
+
+    def job():
+        print("背景提醒排程器已啟動...")
+        while True:
+            try:
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # 查詢符合提醒時間 (reminder_time <= 當前時間) 且 status = 'pending' 的所有任務
+                pending_reminders = database.get_pending_reminders(now_str)
+                for task in pending_reminders:
+                    task_id, title, start_time, reminder_time, _ = task
+                    print(f"發現符合提醒時間的行程: '{title}' (開始時間: {start_time})，開始發送 Email...")
+                    
+                    # 發送 Email
+                    success = email_sender.send_reminder_email(title, start_time)
+                    if success:
+                        # 更新資料庫狀態為 'sent'
+                        database.update_task_status(task_id, 'sent')
+                        print(f"行程 '{title}' 的 Email 提醒發送成功，已更新資料庫狀態為已發送。")
+                    else:
+                        print(f"行程 '{title}' 的 Email 提醒發送失敗，將於下個週期重試。")
+            except Exception as e:
+                print(f"排程器執行出錯: {e}")
+            time.sleep(60) # 每分鐘檢查一次
+
+    scheduler_thread = threading.Thread(target=job, daemon=True)
+    scheduler_thread.start()
+
 if __name__ == "__main__":
+    start_reminder_scheduler()
     app.run(host="0.0.0.0", port=5000)

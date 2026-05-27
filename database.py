@@ -79,5 +79,30 @@ def get_all_tasks():
     conn.close()
     return tasks
 
+def get_pending_reminders(current_time_str):
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, title, start_time, reminder_time, status FROM tasks 
+        WHERE reminder_time <= ? AND status = 'pending'
+    """, (current_time_str,))
+    tasks = cursor.fetchall()
+    conn.close()
+    return tasks
+
+def update_task_status(task_id, status):
+    db_path = get_db_path()
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE tasks SET status = ? WHERE id = ?", (status, task_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error updating task status: {e}")
+        return False
+
 if __name__ == "__main__":
     init_db()

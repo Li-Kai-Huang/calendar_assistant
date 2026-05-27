@@ -45,12 +45,30 @@ LINE_CHANNEL_ACCESS_TOKEN=您的_LINE_Channel_Access_Token
 
 # Gemini API 金鑰 (用於智慧解析行程)
 GEMINI_API_KEY=您的_Gemini_API_Key
+
+# Email SMTP 設定 (預設以 Gmail 為例)
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=465
+SMTP_EMAIL=您的發信Gmail信箱 (例如: test@gmail.com)
+SMTP_PASSWORD=您的發信Gmail「應用程式密碼」(16位英文字母)
+
+# 接收提醒通知的信箱
+RECEIVER_EMAIL=您的收信信箱 (例如: moray.huang@gmail.com)
 ```
 
 > 💡 **如何取得 Gemini API Key？**
 > 1. 前往 [Google AI Studio](https://aistudio.google.com/)。
 > 2. 登入您的 Google 帳號。
 > 3. 點擊 **Get API key**，並建立一個新的 API Key。它具備免費額度，足以應付開發與測試需求！
+
+> 📧 **如何取得 Gmail 的「應用程式密碼」？**
+> 由於 Google 已經停用「低安全性應用程式存取權」，直接填寫 Gmail 登入密碼是行不通的。請按照以下步驟申請專門的 16 位密碼：
+> 1. 開啟您的 [Google 帳戶安全設定](https://myaccount.google.com/security)。
+> 2. 確保您的帳戶已經啟用 **「兩步驟驗證」**。
+> 3. 在兩步驟驗證設定頁面的最下方，找到 **「應用程式密碼 (App Passwords)」**。
+> 4. 在「選取應用程式」中選擇 `郵件`，「選取裝置」選擇 `其他 (自訂名稱)` 並輸入例如 `LINE Bot Calendar`。
+> 5. 點擊 **「產生」**，畫面會出現一組 **16 位英文字母** 的黃色方格密碼。
+> 6. 複製該組 16 位密碼（不含空格），並填入 `.env` 的 `SMTP_PASSWORD` 中。
 
 ---
 
